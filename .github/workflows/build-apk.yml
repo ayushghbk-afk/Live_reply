@@ -27,28 +27,45 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # Declared explicitly rather than relying on the repository's default
+    # GITHUB_TOKEN permissions, which are commonly read-only: without
+    # `contents: write` the `Create GitHub Release` step gets a 403 and no
+    # release is published. Nothing else in this job needs a token scope.
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
 
+      # Must stay on v4 (or newer). v3 defaults to `packages: 'tools platform-tools'`
+      # and the legacy `tools` package was retired from Google's SDK repository, so
+      # its `sdkmanager tools` call exits 1 with "Failed to find package 'tools'"
+      # and the job dies here before Gradle ever runs. v4 defaults to
+      # `platform-tools` only, accepts the SDK licenses (so AGP can auto-download
+      # the platform/build-tools it needs) and runs on Node 24 instead of the
+      # deprecated Node 20 runtime.
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
 
       - name: Setup Environment Files
         run: |
-          # Ensure .env file exists for Secrets Gradle Plugin
+          set -euo pipefail
+
+          # The Secrets Gradle Plugin reads `.env` (falling back to `.env.example`),
+          # so make sure a real `.env` exists before Gradle configures the project.
           if [ ! -f ".env" ]; then
             if [ -f ".env.example" ]; then
               cp .env.example .env
@@ -57,16 +74,51 @@ jobs:
             fi
           fi
 
-          # Ensure debug.keystore is available
-          if [ ! -f "debug.keystore" ]; then
-            if [ -f "debug.keystore.base64" ]; then
-              base64 -d debug.keystore.base64 > debug.keystore
-            else
-              keytool -genkey -v -keystore debug.keystore \
-                -storepass android -alias androiddebugkey -keypass android \
-                -keyalg RSA -keysize 2048 -validity 10000 \
-                -dname "CN=Android Debug,O=Android,C=US"
+      - name: Prepare Signing Keystores
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # `debug.keystore` backs the `debugConfig` signing config (alias
+          # `androiddebugkey`, password `android`).
+          keytool -genkeypair -v -keystore debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+          # `release.keystore` backs the `release` signing config, which expects
+          # the alias `upload`. Use the upload key from the repository secrets
+          # when it is configured, otherwise fall back to a throwaway key so the
+          # release build is still signed and installable.
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            if [ -z "${ANDROID_STORE_PASSWORD:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ]; then
+              echo "::error::ANDROID_KEYSTORE_BASE64 is set but ANDROID_STORE_PASSWORD / ANDROID_KEY_PASSWORD are missing."
+              exit 1
             fi
+            printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > release.keystore
+            {
+              echo "KEYSTORE_PATH=${PWD}/release.keystore"
+              echo "STORE_PASSWORD=${ANDROID_STORE_PASSWORD}"
+              echo "KEY_ALIAS=${ANDROID_KEY_ALIAS:-upload}"
+              echo "KEY_PASSWORD=${ANDROID_KEY_PASSWORD}"
+            } >> "$GITHUB_ENV"
+            echo "::notice::Signing the release APK with the upload key from repository secrets."
+          else
+            keytool -genkeypair -v -keystore release.keystore \
+              -storepass android -alias upload -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Live AI Reply CI,O=CI,C=US"
+            {
+              echo "KEYSTORE_PATH=${PWD}/release.keystore"
+              echo "STORE_PASSWORD=android"
+              echo "KEY_ALIAS=upload"
+              echo "KEY_PASSWORD=android"
+            } >> "$GITHUB_ENV"
+            echo "::notice::No ANDROID_KEYSTORE_BASE64 secret found - signing the release APK with a throwaway CI key. Not suitable for Play Store upload."
           fi
 
       - name: Run Unit & Robolectric Tests
@@ -78,30 +130,29 @@ jobs:
 
       - name: Build Release APK
         if: ${{ github.event.inputs.build_type == 'release' || startsWith(github.ref, 'refs/tags/v') }}
-        env:
-          KEYSTORE_PATH: ${{ github.workspace }}/debug.keystore
-          STORE_PASSWORD: android
-          KEY_PASSWORD: android
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload Debug APK Artifact
-        uses: actions/upload-artifact@v4
+        if: ${{ github.event.inputs.build_type != 'release' }}
+        uses: actions/upload-artifact@v7
         with:
           name: live-ai-reply-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
+          if-no-files-found: error
 
       - name: Upload Release APK Artifact
         if: ${{ github.event.inputs.build_type == 'release' || startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: live-ai-reply-release-apk
           path: app/build/outputs/apk/release/*.apk
           retention-days: 30
+          if-no-files-found: error
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             app/build/outputs/apk/debug/*.apk
