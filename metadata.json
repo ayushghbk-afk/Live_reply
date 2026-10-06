@@ -1,0 +1,6 @@
+{
+  "name": "Live AI Reply",
+  "description": "Real-time AI assistant for live conversations across Android chat apps with suggest, approve, and auto reply modes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

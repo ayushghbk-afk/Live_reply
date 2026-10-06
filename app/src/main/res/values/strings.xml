@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Live AI Reply</string>
+    <string name="accessibility_service_label">Live AI Reply Chat Assistant</string>
+    <string name="accessibility_service_description">Reads active chat messages to generate smart live replies in chosen personality and optionally insert responses with user consent. Sensitive screens and passwords are never monitored.</string>
+    <string name="notification_channel_name">Live AI Reply Active Service</string>
+    <string name="notification_channel_desc">Shows ongoing monitoring status and rapid pause/stop controls.</string>
+    <string name="screen_capture_channel_name">Live AI Reply Screen Capture</string>
+    <string name="screen_capture_channel_desc">Local on-device OCR fallback for chats without accessibility text.</string>
+</resources>
