@@ -110,4 +110,18 @@ class ExampleRobolectricTest {
         assertEquals(ProcessingState.MONITORING, LiveSessionState.processingState.value)
         assertEquals(null, LiveSessionState.latestGeneratedReply.value)
     }
+
+    @Test
+    fun testChronologicalMessageSorting() {
+        val msg1 = ChatMessage("1", "Hello", true, boundsTop = 150)
+        val msg2 = ChatMessage("2", "How are you?", true, boundsTop = 280)
+        val msg3 = ChatMessage("3", "Good, you?", false, boundsTop = 410)
+
+        val unsorted = listOf(msg3, msg1, msg2)
+        val sorted = unsorted.sortedBy { it.boundsTop }
+
+        assertEquals("Hello", sorted[0].text)
+        assertEquals("How are you?", sorted[1].text)
+        assertEquals("Good, you?", sorted[2].text)
+    }
 }

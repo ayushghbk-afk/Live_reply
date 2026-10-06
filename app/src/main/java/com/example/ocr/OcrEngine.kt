@@ -57,13 +57,15 @@ class OcrEngine {
                         timestamp = System.currentTimeMillis(),
                         confidence = 0.85f,
                         boundsLeft = box.left,
-                        boundsRight = box.right
+                        boundsTop = box.top,
+                        boundsRight = box.right,
+                        boundsBottom = box.bottom
                     )
                 )
             }
 
-            // Sort vertically by top coordinate
-            messages.sortedBy { it.boundsLeft }
+            // Sort vertically in conversation order (top to bottom)
+            messages.sortedBy { it.boundsTop }
         } catch (e: Exception) {
             emptyList()
         } finally {

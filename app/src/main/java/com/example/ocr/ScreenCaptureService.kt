@@ -170,8 +170,22 @@ class ScreenCaptureService : Service() {
             return@withContext
         }
 
+        // STEP 1: Take screenshot
         val frame = captureLatestFrame() ?: return@withContext
-        val detectedMessages = ocrEngine.recognizeConversation(frame)
+        repository.log("Pipeline", "📸 Step 1/5: Screenshot captured from screen buffer", "INFO")
+
+        // STEP 2 & 3: Convert in txt and delete screenshot immediately
+        val detectedMessages = try {
+            val msgs = ocrEngine.recognizeConversation(frame)
+            repository.log("Pipeline", "📝 Step 2/5: Converted image to text (${msgs.size} text bubbles extracted)", "INFO")
+            msgs
+        } finally {
+            // STEP 3: Delete screenshot (recycle immediately from RAM, 0 images saved or retained)
+            if (!frame.isRecycled) {
+                frame.recycle()
+            }
+            repository.log("Pipeline", "🗑️ Step 3/5: Screenshot deleted from memory immediately (Privacy Protected)", "INFO")
+        }
 
         if (detectedMessages.isEmpty()) return@withContext
 
@@ -185,32 +199,37 @@ class ScreenCaptureService : Service() {
         // Confirmed new incoming message seen live on screen!
         loopPrevention.markMessageProcessed(latestIncoming.text)
         LiveSessionState.setNewIncomingMessage(latestIncoming.text, detectedMessages)
-        repository.log("LiveVision", "👁 Spotted live message on screen: \"${latestIncoming.text.take(50)}\"", "INFO")
+        repository.log("Pipeline", "👁 Spotted incoming message: \"${latestIncoming.text.take(50)}\"", "INFO")
 
-        // Trigger AI response generation
+        // STEP 4: Feed to AI
         val persona = repository.getSelectedPersona() ?: return@withContext
         val config = repository.appConfig.value
 
         LiveSessionState.updateState(ProcessingState.THINKING)
+        repository.log("Pipeline", "🧠 Step 4/5: Feeding extracted text to AI model (${persona.name})...", "INFO")
         val result = aiProvider.generateReply(detectedMessages, latestIncoming.text, persona, config)
 
         result.fold(
             onSuccess = { reply ->
                 LiveSessionState.setGeneratedReply(reply)
-                repository.log("LiveVision", "✨ Live on-screen reply ready: \"${reply.take(50)}\"", "SUCCESS")
+                repository.log("Pipeline", "✨ Generated AI reply: \"${reply.take(50)}\"", "SUCCESS")
 
-                // If in AUTO mode, execute send after configured delay
+                // STEP 5: Send reply
                 if (config.operatingMode == OperatingMode.AUTO) {
+                    repository.log("Pipeline", "🚀 Step 5/5: AUTO mode - waiting ${config.replyDelaySeconds}s delay before sending...", "INFO")
                     delay(config.replyDelaySeconds * 1000L)
                     if (repository.appConfig.value.isMonitoringActive && !repository.appConfig.value.isPaused && !LiveSessionState.manualTypingDetected.value) {
+                        repository.log("Pipeline", "🚀 Sending reply automatically into chat input field!", "SUCCESS")
                         LiveSessionState.triggerAction(LiveSessionState.OverlayAction.Send)
                     }
+                } else {
+                    repository.log("Pipeline", "💬 Step 5/5: Live on-screen reply card ready (Tap Send to insert & submit)", "INFO")
                 }
             },
             onFailure = { err ->
                 val errorMsg = err.localizedMessage ?: "Failed to generate reply"
                 LiveSessionState.setError(errorMsg)
-                repository.log("LiveVision", "Error generating live reply: $errorMsg", "WARN")
+                repository.log("Pipeline", "Error generating live reply: $errorMsg", "WARN")
             }
         )
     }

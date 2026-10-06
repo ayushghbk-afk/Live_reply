@@ -34,7 +34,9 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val confidence: Float = 1.0f,
     val boundsLeft: Int = 0,
-    val boundsRight: Int = 0
+    val boundsTop: Int = 0,
+    val boundsRight: Int = 0,
+    val boundsBottom: Int = 0
 )
 
 enum class PersonalityType(val title: String) {

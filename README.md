@@ -6,6 +6,12 @@
 
 ## 🌟 Core Features
 
+- **5-Step On-Screen AI Pipeline 📸 ➔ 📝 ➔ 🗑️ ➔ 🧠 ➔ 🚀**:
+  1. **Take Screenshot**: Automatically captures the active screen buffer via MediaProjection without user interruption.
+  2. **Convert to Text**: Processes the frame locally using on-device Google ML Kit Text Recognition into chronologically sorted conversation blocks.
+  3. **Delete Screenshot Immediately**: The bitmap in memory is recycled and deleted immediately (0 images saved to disk, 0 images sent over the network).
+  4. **Feed to AI**: Feeds the parsed incoming message and recent conversation context to your configured AI model with persona styling and formatting rules.
+  5. **Send Reply**: Automatically inserts the reply into the chat input field and clicks Send (in AUTO mode) or presents a floating 1-tap Send chip over the active chat.
 - **Google Translate-Style Live Screen Sight (Auto-See & Live Reply) 👁✨**:
   - Continuously or on-demand "sees" chat messages right on your screen across any app (WhatsApp, Instagram, Telegram, Discord, Character.AI, Chrome).
   - Floating Live Reply Chip pops up right over your active conversation, displaying the latest incoming message and the smart AI suggestion.

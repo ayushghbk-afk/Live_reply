@@ -122,8 +122,14 @@ class LiveReplyAccessibilityService : AccessibilityService() {
             val captureService = ScreenCaptureService.instance
             val frame = captureService?.captureLatestFrame()
             if (frame != null) {
-                messages = ocrEngine.recognizeConversation(frame)
-                repository.log("OCR", "Extracted ${messages.size} messages via local on-device OCR", "INFO")
+                messages = try {
+                    ocrEngine.recognizeConversation(frame)
+                } finally {
+                    if (!frame.isRecycled) {
+                        frame.recycle()
+                    }
+                }
+                repository.log("OCR", "Extracted ${messages.size} messages via local OCR and deleted screenshot immediately", "INFO")
             }
         }
 
