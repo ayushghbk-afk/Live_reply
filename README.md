@@ -45,7 +45,14 @@
 
 ## 🛠️ How to Build & Install
 
-### Building with Gradle
+### Automatic APK Building with GitHub Actions CI/CD 🚀
+This repository includes a preconfigured GitHub Actions workflow (`.github/workflows/build-apk.yml`) that automatically builds, tests, and packages your APK:
+- **Automatic Triggers**: Runs on every `push` to `main` / `master`, every Pull Request, and on tag pushes (`v*`).
+- **Manual Trigger**: Can be manually triggered from the GitHub **Actions** tab with a choice between `debug` and `release` APK builds.
+- **Artifact Downloads**: After each build, the APK is uploaded to the workflow run summary under **Artifacts** (`live-ai-reply-debug-apk`).
+- **Automated GitHub Releases**: Pushing a tag like `git tag v1.0.0 && git push origin v1.0.0` will automatically create a GitHub Release with the APKs attached.
+
+### Building Locally with Gradle
 ```bash
 # Build the Debug APK
 gradle assembleDebug
