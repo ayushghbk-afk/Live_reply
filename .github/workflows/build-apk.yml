@@ -27,6 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # Declared explicitly rather than relying on the repository's default
+    # GITHUB_TOKEN permissions, which are commonly read-only: without
+    # `contents: write` the `Create GitHub Release` step gets a 403 and no
+    # release is published. Nothing else in this job needs a token scope.
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
