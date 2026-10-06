@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,10 +35,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -252,49 +255,130 @@ fun OverlayContent(
     val activeChat by LiveSessionState.currentChatTitle.collectAsState()
     val clipboardManager = LocalClipboardManager.current
 
+    val dotColor = when (state) {
+        ProcessingState.MONITORING -> Color(0xFF00E676)
+        ProcessingState.THINKING -> Color(0xFFFFD600)
+        ProcessingState.REPLY_READY -> Color(0xFF00E5FF)
+        ProcessingState.TYPING -> Color(0xFFFF9100)
+        ProcessingState.SENDING -> Color(0xFF651FFF)
+        ProcessingState.ERROR -> Color(0xFFFF5252)
+        ProcessingState.PAUSED, ProcessingState.IDLE -> Color(0xFF9E9E9E)
+    }
+
     if (!isExpanded) {
-        // Collapsed Floating Bubble / Pill
-        Box(
-            modifier = Modifier
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        onDragDelta(dragAmount.x, dragAmount.y)
+        // Collapsed Floating Mode
+        if (generatedReply != null) {
+            // Google Translate-Style Live Reply Floating Chip
+            Box(
+                modifier = Modifier
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onDragDelta(dragAmount.x, dragAmount.y)
+                        }
+                    }
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xF010162A))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E5FF))
+                    )
+                    Column(
+                        modifier = Modifier
+                            .widthIn(max = 180.dp)
+                            .clickable { isExpanded = true }
+                    ) {
+                        Text(
+                            text = "✨ " + (editedReply ?: generatedReply!!),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "Live Reply Ready • Tap",
+                            color = Color(0xFF80D8FF),
+                            fontSize = 9.sp
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            LiveSessionState.triggerAction(LiveSessionState.OverlayAction.Send)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text("Send", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    IconButton(
+                        onClick = {
+                            LiveSessionState.triggerAction(LiveSessionState.OverlayAction.Reject)
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color.Gray, modifier = Modifier.size(14.dp))
                     }
                 }
-                .clip(CircleShape)
-                .background(Color(0xFF161B2E))
-                .clickable { isExpanded = true }
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            }
+        } else {
+            // Collapsed Floating AI Eye Pill
+            Box(
+                modifier = Modifier
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onDragDelta(dragAmount.x, dragAmount.y)
+                        }
+                    }
+                    .clip(CircleShape)
+                    .background(Color(0xFF161B2E))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
             ) {
-                val dotColor = when (state) {
-                    ProcessingState.MONITORING -> Color(0xFF00E676)
-                    ProcessingState.THINKING -> Color(0xFFFFD600)
-                    ProcessingState.REPLY_READY -> Color(0xFF00E5FF)
-                    ProcessingState.TYPING -> Color(0xFFFF9100)
-                    ProcessingState.SENDING -> Color(0xFF651FFF)
-                    ProcessingState.ERROR -> Color(0xFFFF5252)
-                    ProcessingState.PAUSED, ProcessingState.IDLE -> Color(0xFF9E9E9E)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(dotColor)
+                    )
+
+                    Text(
+                        text = "AI",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .clickable { isExpanded = true }
+                            .padding(horizontal = 4.dp, vertical = 6.dp)
+                    )
+
+                    IconButton(
+                        onClick = {
+                            LiveSessionState.triggerAction(LiveSessionState.OverlayAction.ScanScreenNow)
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Visibility,
+                            contentDescription = "Scan Screen Now",
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
-
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(dotColor)
-                )
-
-                Text(
-                    text = if (generatedReply != null) "AI Ready" else "AI",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
             }
         }
     } else {
@@ -353,6 +437,48 @@ fun OverlayContent(
                             tint = Color.White.copy(alpha = 0.7f),
                             modifier = Modifier.size(18.dp)
                         )
+                    }
+                }
+
+                // Live Screen Sight Control Strip (Google Translate Live Mode)
+                Surface(
+                    color = Color(0xFF1E2842),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                tint = Color(0xFF00E5FF),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Live Screen Sight",
+                                fontSize = 11.sp,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                LiveSessionState.triggerAction(LiveSessionState.OverlayAction.ScanScreenNow)
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
+                        ) {
+                            Icon(Icons.Default.FlashOn, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("Scan Now", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 

@@ -27,6 +27,7 @@ const val ROUTE_LOGS = "logs"
 @Composable
 fun AppNavigation(
     application: LiveAiReplyApplication,
+    onRequestScreenCapture: () -> Unit = {},
     navController: NavHostController = rememberNavController()
 ) {
     val repository = application.repository
@@ -42,6 +43,7 @@ fun AppNavigation(
         composable(ROUTE_DASHBOARD) {
             DashboardScreen(
                 repository = repository,
+                onRequestScreenCapture = onRequestScreenCapture,
                 onNavigateToAiSettings = { navController.navigate(ROUTE_AI_SETTINGS) },
                 onNavigateToPersonas = { navController.navigate(ROUTE_PERSONAS) },
                 onNavigateToSupportedApps = { navController.navigate(ROUTE_SUPPORTED_APPS) },

@@ -45,6 +45,9 @@ object LiveSessionState {
     private val _isScreenCaptureActive = MutableStateFlow(false)
     val isScreenCaptureActive: StateFlow<Boolean> = _isScreenCaptureActive.asStateFlow()
 
+    private val _isAutoSeeActive = MutableStateFlow(true)
+    val isAutoSeeActive: StateFlow<Boolean> = _isAutoSeeActive.asStateFlow()
+
     private val _manualTypingDetected = MutableStateFlow(false)
     val manualTypingDetected: StateFlow<Boolean> = _manualTypingDetected.asStateFlow()
 
@@ -61,6 +64,8 @@ object LiveSessionState {
         data class Edit(val newText: String) : OverlayAction()
         object EmergencyStop : OverlayAction()
         object PauseCurrentChat : OverlayAction()
+        object ScanScreenNow : OverlayAction()
+        data class ToggleAutoSee(val enabled: Boolean) : OverlayAction()
     }
 
     private val _overlayActionEvents = MutableSharedFlow<OverlayAction>(extraBufferCapacity = 10)
@@ -85,6 +90,10 @@ object LiveSessionState {
 
     fun setScreenCaptureActive(active: Boolean) {
         _isScreenCaptureActive.value = active
+    }
+
+    fun setAutoSeeActive(active: Boolean) {
+        _isAutoSeeActive.value = active
     }
 
     fun setManualTyping(detected: Boolean) {

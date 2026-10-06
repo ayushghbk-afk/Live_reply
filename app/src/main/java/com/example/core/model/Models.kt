@@ -71,6 +71,8 @@ data class AppConfig(
     val targetLanguage: String = "Auto",
     val translationModeEnabled: Boolean = false,
     val ocrFallbackEnabled: Boolean = true,
+    val autoSeeOnScreen: Boolean = true,
+    val scanIntervalMs: Long = 2500L,
     val overlayScale: Float = 1.0f,
     val overlayOpacity: Float = 0.95f,
     val autoShowOverlay: Boolean = true,

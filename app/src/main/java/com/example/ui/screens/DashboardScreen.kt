@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -90,6 +92,7 @@ import com.example.ui.theme.NeonEmerald
 @Composable
 fun DashboardScreen(
     repository: AppRepository,
+    onRequestScreenCapture: () -> Unit = {},
     onNavigateToAiSettings: () -> Unit,
     onNavigateToPersonas: () -> Unit,
     onNavigateToSupportedApps: () -> Unit,
@@ -104,6 +107,8 @@ fun DashboardScreen(
     val state by LiveSessionState.processingState.collectAsState()
     val isAccessibilityActive by LiveSessionState.isAccessibilityConnected.collectAsState()
     val isOverlayActive by LiveSessionState.isOverlayShowing.collectAsState()
+    val isScreenCaptureActive by LiveSessionState.isScreenCaptureActive.collectAsState()
+    val isAutoSeeActive by LiveSessionState.isAutoSeeActive.collectAsState()
     val activeChatTitle by LiveSessionState.currentChatTitle.collectAsState()
     val incomingMessage by LiveSessionState.latestIncomingMessage.collectAsState()
     val generatedReply by LiveSessionState.latestGeneratedReply.collectAsState()
@@ -333,6 +338,103 @@ fun DashboardScreen(
                 }
             }
 
+            // 3b. Google Translate-Style Live Screen Sight Card
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isScreenCaptureActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    border = CardDefaults.outlinedCardBorder().copy(
+                        brush = androidx.compose.ui.graphics.SolidColor(if (isScreenCaptureActive) CyberCyan else MaterialTheme.colorScheme.outlineVariant)
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("live_screen_vision_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Visibility,
+                                    contentDescription = null,
+                                    tint = if (isScreenCaptureActive) CyberCyan else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "LIVE SCREEN SIGHT",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (isScreenCaptureActive) CyberCyan else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Google Translate live on-screen mode",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            if (isScreenCaptureActive) {
+                                Surface(
+                                    color = NeonEmerald.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = "● AUTO-SEEING",
+                                        color = NeonEmerald,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "Auto-sees incoming messages directly on your screen (WhatsApp, Telegram, Discord, Browser, Character.AI) and shows smart replies live over the app.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 16.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (!isScreenCaptureActive) {
+                                Button(
+                                    onClick = onRequestScreenCapture,
+                                    modifier = Modifier.weight(1f).testTag("enable_screen_sight_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo)
+                                ) {
+                                    Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Enable Live Sight", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Button(
+                                    onClick = { LiveSessionState.triggerAction(LiveSessionState.OverlayAction.ScanScreenNow) },
+                                    modifier = Modifier.weight(1f).testTag("scan_now_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                                ) {
+                                    Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Scan Screen Now", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 4. Live Message & Generated Reply Preview
             if (!incomingMessage.isNullOrBlank() || !generatedReply.isNullOrBlank()) {
                 item {
@@ -457,6 +559,13 @@ fun DashboardScreen(
                                     )
                                     context.startActivity(intent)
                                 }
+                            )
+
+                            PermissionStatusRow(
+                                title = "Screen Vision Capture",
+                                isGranted = isScreenCaptureActive,
+                                actionLabel = "Enable",
+                                onFix = onRequestScreenCapture
                             )
 
                             PermissionStatusRow(

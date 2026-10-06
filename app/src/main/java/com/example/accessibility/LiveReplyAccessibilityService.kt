@@ -324,6 +324,19 @@ class LiveReplyAccessibilityService : AccessibilityService() {
                             LiveSessionState.updateState(ProcessingState.MONITORING)
                         }
                     }
+                    is LiveSessionState.OverlayAction.ScanScreenNow -> {
+                        val capture = ScreenCaptureService.instance
+                        if (capture != null) {
+                            capture.scanNow()
+                        } else {
+                            val pkg = LiveSessionState.currentPackageName.value ?: "com.whatsapp"
+                            inspectActiveChat(pkg)
+                        }
+                    }
+                    is LiveSessionState.OverlayAction.ToggleAutoSee -> {
+                        LiveSessionState.setAutoSeeActive(action.enabled)
+                        repository.log("LiveVision", "Auto-See on screen toggled: ${action.enabled}", "INFO")
+                    }
                 }
             }
         }

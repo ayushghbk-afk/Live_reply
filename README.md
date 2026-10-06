@@ -6,6 +6,11 @@
 
 ## 🌟 Core Features
 
+- **Google Translate-Style Live Screen Sight (Auto-See & Live Reply) 👁✨**:
+  - Continuously or on-demand "sees" chat messages right on your screen across any app (WhatsApp, Instagram, Telegram, Discord, Character.AI, Chrome).
+  - Floating Live Reply Chip pops up right over your active conversation, displaying the latest incoming message and the smart AI suggestion.
+  - One-tap `[🚀 Send / Insert]` button to paste the response into the chat or auto-send without switching apps.
+  - Floating `[👁 Scan Now]` quick lens for instant on-demand screen reading.
 - **Three Operating Modes**:
   - **SUGGEST**: Detects messages, generates replies in a floating overlay, and lets you review, edit, regenerate, copy, or reject them. Nothing is sent automatically.
   - **APPROVE**: Displays the AI response and waits for a single tap on `Send` before inserting and submitting.
