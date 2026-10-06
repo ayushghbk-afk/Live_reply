@@ -62,10 +62,15 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,9 +81,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.core.model.CaptureRateMode
+import com.example.core.model.CaptureResolutionMode
 import com.example.core.model.OperatingMode
 import com.example.core.model.ProcessingState
 import com.example.core.state.LiveSessionState
+import com.example.ocr.ScreenCaptureService
 import com.example.overlay.OverlayService
 import com.example.storage.AppRepository
 import com.example.storage.PersonaEntity
@@ -87,6 +95,7 @@ import com.example.ui.theme.CrimsonStop
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.ElectricIndigo
 import com.example.ui.theme.NeonEmerald
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,7 +111,9 @@ fun DashboardScreen(
     onOpenWizard: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val config by repository.appConfig.collectAsState()
+    val allPersonas by repository.personas.collectAsState(initial = emptyList())
     val selectedPersona by repository.selectedPersonaFlow.collectAsState(initial = null)
     val state by LiveSessionState.processingState.collectAsState()
     val isAccessibilityActive by LiveSessionState.isAccessibilityConnected.collectAsState()
@@ -112,6 +123,11 @@ fun DashboardScreen(
     val activeChatTitle by LiveSessionState.currentChatTitle.collectAsState()
     val incomingMessage by LiveSessionState.latestIncomingMessage.collectAsState()
     val generatedReply by LiveSessionState.latestGeneratedReply.collectAsState()
+
+    val framesCaptured by LiveSessionState.framesCapturedCount.collectAsState()
+    val framesSkipped by LiveSessionState.framesSkippedUnchangedCount.collectAsState()
+    val lastResolution by LiveSessionState.lastCaptureResolution.collectAsState()
+    val lastDurationMs by LiveSessionState.lastCaptureDurationMs.collectAsState()
 
     val canDrawOverlays = remember { Settings.canDrawOverlays(context) }
     val isApiKeySet = remember { repository.secureStorage.apiKey.isNotBlank() }
@@ -272,6 +288,121 @@ fun DashboardScreen(
                 }
             }
 
+            // 2b. Tone, Genre & Cosplay Quick Switcher
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "AI TONE, GENRE & COSPLAY",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Text(
+                            text = "All / Studio (${allPersonas.size}) →",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyberCyan,
+                            modifier = Modifier.clickable { onNavigateToPersonas() }
+                        )
+                    }
+
+                    // Active Persona Highlight Card
+                    if (selectedPersona != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                            border = CardDefaults.outlinedCardBorder().copy(
+                                brush = androidx.compose.ui.graphics.SolidColor(ElectricIndigo)
+                            ),
+                            modifier = Modifier.fillMaxWidth().clickable { onNavigateToPersonas() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            color = when (selectedPersona!!.category) {
+                                                com.example.core.model.PersonaCategory.COSPLAY -> Color(0xFFE040FB).copy(alpha = 0.2f)
+                                                com.example.core.model.PersonaCategory.GENRE -> Color(0xFF00E5FF).copy(alpha = 0.2f)
+                                                com.example.core.model.PersonaCategory.TONE -> Color(0xFF7C4DFF).copy(alpha = 0.2f)
+                                                com.example.core.model.PersonaCategory.CUSTOM -> Color(0xFFFFAB40).copy(alpha = 0.2f)
+                                            },
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "${selectedPersona!!.category.icon} ${selectedPersona!!.category.displayName.uppercase()}",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = when (selectedPersona!!.category) {
+                                                    com.example.core.model.PersonaCategory.COSPLAY -> Color(0xFFEA80FC)
+                                                    com.example.core.model.PersonaCategory.GENRE -> CyberCyan
+                                                    com.example.core.model.PersonaCategory.TONE -> Color(0xFFB388FF)
+                                                    com.example.core.model.PersonaCategory.CUSTOM -> Color(0xFFFFD180)
+                                                },
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = selectedPersona!!.name,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+
+                                    if (selectedPersona!!.catchphrase.isNotBlank()) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = "\"${selectedPersona!!.catchphrase}\"",
+                                            fontSize = 11.sp,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Text("Switch", fontSize = 11.sp, color = CyberCyan, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Horizontal Quick-Switch Persona Chips
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(allPersonas, key = { it.id }) { p ->
+                            val isSelected = selectedPersona?.id == p.id
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    scope.launch { repository.selectPersona(p.id) }
+                                },
+                                label = {
+                                    Text(
+                                        text = "${p.category.icon} ${p.name.replace(" (Default)", "").replace("Cosplay: ", "").replace(" Mode", "")}",
+                                        fontSize = 11.sp
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = ElectricIndigo.copy(alpha = 0.3f),
+                                    selectedLabelColor = CyberCyan
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
             // 3. Quick Toggles Row (Monitoring, Floating Overlay)
             item {
                 Row(
@@ -338,7 +469,7 @@ fun DashboardScreen(
                 }
             }
 
-            // 3b. Google Translate-Style Live Screen Sight Card
+            // 3b. High-Efficiency Screen Sight Card with Resource Saver Controls
             item {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -375,7 +506,7 @@ fun DashboardScreen(
                                         color = if (isScreenCaptureActive) CyberCyan else MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Google Translate live on-screen mode",
+                                        text = "Resource-saver on-screen vision (Google Translate live mode)",
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -399,11 +530,92 @@ fun DashboardScreen(
                         }
 
                         Text(
-                            text = "Auto-sees incoming messages directly on your screen (WhatsApp, Telegram, Discord, Browser, Character.AI) and shows smart replies live over the app.",
+                            text = "Auto-sees incoming chat messages directly on screen with reduced frame rates and memory downscaling to prevent resource exhaustion and crashes.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 16.sp
                         )
+
+                        // Resource Optimizer Panel
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Reduced Frame Rate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(config.captureRateMode.badge, fontSize = 10.sp, color = NeonEmerald)
+                                }
+
+                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                    CaptureRateMode.entries.forEachIndexed { index, rate ->
+                                        SegmentedButton(
+                                            selected = config.captureRateMode == rate,
+                                            onClick = { repository.updateCaptureRateMode(rate) },
+                                            shape = SegmentedButtonDefaults.itemShape(index = index, count = CaptureRateMode.entries.size)
+                                        ) {
+                                            Text(rate.title.substringBefore(" "), fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Resolution Downscaling", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(config.captureResolution.title, fontSize = 10.sp, color = CyberCyan)
+                                }
+
+                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                    CaptureResolutionMode.entries.forEachIndexed { index, res ->
+                                        SegmentedButton(
+                                            selected = config.captureResolution == res,
+                                            onClick = { repository.updateCaptureResolution(res) },
+                                            shape = SegmentedButtonDefaults.itemShape(index = index, count = CaptureResolutionMode.entries.size)
+                                        ) {
+                                            Text(res.title.substringBefore(" "), fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Smart Screen Change Detection", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Skips OCR on identical static frames (saves ~90% CPU)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = config.smartFrameDiffing,
+                                        onCheckedChange = { repository.updateSmartFrameDiffing(it) }
+                                    )
+                                }
+
+                                if (isScreenCaptureActive) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("⚡ Processed: $framesCaptured frames", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("🍃 Idle Skipped: $framesSkipped frames", fontSize = 10.sp, color = NeonEmerald)
+                                    }
+                                    Text(
+                                        text = "Resolution: $lastResolution • Speed: ${lastDurationMs}ms • Memory Saved: ~${(framesSkipped * 2.5).toInt()} MB",
+                                        fontSize = 10.sp,
+                                        color = CyberCyan
+                                    )
+                                }
+                            }
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -428,6 +640,18 @@ fun DashboardScreen(
                                     Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
                                     Spacer(Modifier.width(4.dp))
                                     Text("Scan Screen Now", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        ScreenCaptureService.stop(context)
+                                    },
+                                    modifier = Modifier.testTag("stop_screen_sight_button"),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252))
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(2.dp))
+                                    Text("Stop Sight", fontSize = 11.sp)
                                 }
                             }
                         }

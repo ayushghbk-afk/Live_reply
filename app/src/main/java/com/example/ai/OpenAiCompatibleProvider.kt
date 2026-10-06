@@ -230,12 +230,23 @@ class OpenAiCompatibleProvider(
             append("- Reply length guideline: ${persona.replyLength.instruction} (Maximum ${persona.maxCharacters} characters).\n\n")
 
             append("PERSONA DETAILS:\n")
+            append("Category: ${persona.category.displayName}\n")
             append("Name: ${persona.name}\n")
+            if (persona.catchphrase.isNotBlank()) append("Catchphrase / Vibe: \"${persona.catchphrase}\"\n")
             append("Personality: ${persona.personalityDescription}\n")
             if (persona.background.isNotBlank()) append("Background: ${persona.background}\n")
             if (persona.relationship.isNotBlank()) append("Relationship: ${persona.relationship}\n")
             if (persona.speakingStyle.isNotBlank()) append("Speaking Style: ${persona.speakingStyle}\n")
             if (persona.rules.isNotBlank()) append("Persona Rules: ${persona.rules}\n")
+
+            if (persona.category == com.example.core.model.PersonaCategory.COSPLAY) {
+                append("\nCOSPLAY ROLEPLAY DIRECTIVE:\n")
+                append("- You are cosplaying and roleplaying as ${persona.name}. Embody their voice, catchphrases, quirks, and worldview completely.\n")
+                append("- Never break character under any circumstances. Reply as the character texting in this live conversation.\n")
+            } else if (persona.category == com.example.core.model.PersonaCategory.GENRE) {
+                append("\nGENRE IMMERSION DIRECTIVE:\n")
+                append("- Format your reply strictly within the world and stylistic tropes of ${persona.name}.\n")
+            }
 
             if (customGlobal.isNotBlank()) {
                 append("\nUSER ADDITIONAL PREFERENCES:\n$customGlobal\n")

@@ -44,12 +44,16 @@ class MainActivity : ComponentActivity() {
                                 putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
                                 putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
                             }
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                startForegroundService(serviceIntent)
-                            } else {
-                                startService(serviceIntent)
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    startForegroundService(serviceIntent)
+                                } else {
+                                    startService(serviceIntent)
+                                }
+                                app.repository.log("LiveVision", "👁 Live on-screen sight granted! Auto-seeing messages.", "SUCCESS")
+                            } catch (e: Exception) {
+                                app.repository.log("LiveVision", "Failed to start ScreenCaptureService: ${e.message}", "ERROR")
                             }
-                            app.repository.log("LiveVision", "👁 Live on-screen sight granted! Auto-seeing messages.", "SUCCESS")
                         } else {
                             app.repository.log("LiveVision", "Screen capture permission declined.", "WARN")
                         }

@@ -2,6 +2,7 @@ package com.example.storage
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.example.core.model.PersonaCategory
 import com.example.core.model.PersonalityType
 import com.example.core.model.ReplyLength
 
@@ -10,6 +11,8 @@ data class PersonaEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val personalityType: PersonalityType = PersonalityType.CASUAL,
+    val category: PersonaCategory = PersonaCategory.TONE,
+    val catchphrase: String = "",
     val personalityDescription: String,
     val background: String = "",
     val relationship: String = "",

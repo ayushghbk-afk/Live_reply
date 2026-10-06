@@ -22,6 +22,9 @@ interface AppDao {
     @Query("SELECT * FROM personas WHERE isSelected = 1 LIMIT 1")
     fun getSelectedPersonaFlow(): Flow<PersonaEntity?>
 
+    @Query("SELECT COUNT(*) FROM personas")
+    suspend fun getPersonaCount(): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPersona(persona: PersonaEntity): Long
 

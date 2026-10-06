@@ -83,7 +83,7 @@ object NotificationHelper {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("Live AI Reply")
             .setContentText(content)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setContentIntent(openAppPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)

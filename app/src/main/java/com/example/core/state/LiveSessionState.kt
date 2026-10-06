@@ -51,6 +51,41 @@ object LiveSessionState {
     private val _manualTypingDetected = MutableStateFlow(false)
     val manualTypingDetected: StateFlow<Boolean> = _manualTypingDetected.asStateFlow()
 
+    // Screen Capture Efficiency Metrics
+    private val _framesCapturedCount = MutableStateFlow(0L)
+    val framesCapturedCount: StateFlow<Long> = _framesCapturedCount.asStateFlow()
+
+    private val _framesSkippedUnchangedCount = MutableStateFlow(0L)
+    val framesSkippedUnchangedCount: StateFlow<Long> = _framesSkippedUnchangedCount.asStateFlow()
+
+    private val _lastCaptureResolution = MutableStateFlow("540x1200")
+    val lastCaptureResolution: StateFlow<String> = _lastCaptureResolution.asStateFlow()
+
+    private val _lastCaptureDurationMs = MutableStateFlow(0L)
+    val lastCaptureDurationMs: StateFlow<Long> = _lastCaptureDurationMs.asStateFlow()
+
+    private val _activePersonaName = MutableStateFlow("🎭 Natural Friendly")
+    val activePersonaName: StateFlow<String> = _activePersonaName.asStateFlow()
+
+    fun setActivePersonaName(name: String) {
+        _activePersonaName.value = name
+    }
+
+    fun recordFrameCaptured(durationMs: Long, resolution: String) {
+        _framesCapturedCount.value += 1
+        _lastCaptureDurationMs.value = durationMs
+        _lastCaptureResolution.value = resolution
+    }
+
+    fun recordFrameSkippedUnchanged() {
+        _framesSkippedUnchangedCount.value += 1
+    }
+
+    fun resetEfficiencyCounters() {
+        _framesCapturedCount.value = 0L
+        _framesSkippedUnchangedCount.value = 0L
+    }
+
     // Loop & duplicate prevention hashes
     var lastProcessedMessageHash: Int = 0
     var lastSentReplyHash: Int = 0

@@ -253,6 +253,7 @@ fun OverlayContent(
     val editedReply by LiveSessionState.editedReply.collectAsState()
     val errorMsg by LiveSessionState.errorMessage.collectAsState()
     val activeChat by LiveSessionState.currentChatTitle.collectAsState()
+    val activePersona by LiveSessionState.activePersonaName.collectAsState()
     val clipboardManager = LocalClipboardManager.current
 
     val dotColor = when (state) {
@@ -412,10 +413,10 @@ fun OverlayContent(
                 ) {
                     Column {
                         Text(
-                            text = "Live AI Reply",
+                            text = "Live AI Reply • $activePersona",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            fontSize = 13.sp
                         )
                         Text(
                             text = "$activeChat • ${state.label}",

@@ -139,6 +139,24 @@ class AppRepository(
         log("Config", "Operating mode set to ${mode.displayName}", "INFO")
     }
 
+    fun updateCaptureRateMode(mode: com.example.core.model.CaptureRateMode) {
+        _appConfig.update { it.copy(captureRateMode = mode) }
+        saveConfigValue("capture_rate_mode", mode.name)
+        log("Config", "Screen capture rate set to ${mode.title} (${mode.intervalMs}ms)", "INFO")
+    }
+
+    fun updateCaptureResolution(mode: com.example.core.model.CaptureResolutionMode) {
+        _appConfig.update { it.copy(captureResolution = mode) }
+        saveConfigValue("capture_resolution", mode.name)
+        log("Config", "Screen capture resolution set to ${mode.title}", "INFO")
+    }
+
+    fun updateSmartFrameDiffing(enabled: Boolean) {
+        _appConfig.update { it.copy(smartFrameDiffing = enabled) }
+        saveConfigValue("smart_frame_diffing", enabled)
+        log("Config", "Smart frame change detection set to $enabled", "INFO")
+    }
+
     fun updateMonitoringActive(active: Boolean) {
         _appConfig.update { it.copy(isMonitoringActive = active) }
         saveConfigValue("monitoring_active", active)
@@ -194,6 +212,11 @@ class AppRepository(
         val replyLengthStr = sp.getString("reply_length", ReplyLength.NORMAL.name) ?: ReplyLength.NORMAL.name
         val length = try { ReplyLength.valueOf(replyLengthStr) } catch (e: Exception) { ReplyLength.NORMAL }
 
+        val rateStr = sp.getString("capture_rate_mode", com.example.core.model.CaptureRateMode.BALANCED.name) ?: com.example.core.model.CaptureRateMode.BALANCED.name
+        val rate = try { com.example.core.model.CaptureRateMode.valueOf(rateStr) } catch (e: Exception) { com.example.core.model.CaptureRateMode.BALANCED }
+        val resStr = sp.getString("capture_resolution", com.example.core.model.CaptureResolutionMode.LOW_RESOURCE.name) ?: com.example.core.model.CaptureResolutionMode.LOW_RESOURCE.name
+        val res = try { com.example.core.model.CaptureResolutionMode.valueOf(resStr) } catch (e: Exception) { com.example.core.model.CaptureResolutionMode.LOW_RESOURCE }
+
         return AppConfig(
             operatingMode = mode,
             debounceDelayMs = sp.getLong("debounce_delay_ms", 800L),
@@ -207,6 +230,10 @@ class AppRepository(
             targetLanguage = sp.getString("target_language", "Auto") ?: "Auto",
             translationModeEnabled = sp.getBoolean("translation_mode", false),
             ocrFallbackEnabled = sp.getBoolean("ocr_fallback", true),
+            autoSeeOnScreen = sp.getBoolean("auto_see_on_screen", true),
+            captureRateMode = rate,
+            captureResolution = res,
+            smartFrameDiffing = sp.getBoolean("smart_frame_diffing", true),
             overlayScale = sp.getFloat("overlay_scale", 1.0f),
             overlayOpacity = sp.getFloat("overlay_opacity", 0.95f),
             autoShowOverlay = sp.getBoolean("auto_show_overlay", true),
@@ -245,6 +272,10 @@ class AppRepository(
             .putString("target_language", c.targetLanguage)
             .putBoolean("translation_mode", c.translationModeEnabled)
             .putBoolean("ocr_fallback", c.ocrFallbackEnabled)
+            .putBoolean("auto_see_on_screen", c.autoSeeOnScreen)
+            .putString("capture_rate_mode", c.captureRateMode.name)
+            .putString("capture_resolution", c.captureResolution.name)
+            .putBoolean("smart_frame_diffing", c.smartFrameDiffing)
             .putFloat("overlay_scale", c.overlayScale)
             .putFloat("overlay_opacity", c.overlayOpacity)
             .putBoolean("auto_show_overlay", c.autoShowOverlay)
