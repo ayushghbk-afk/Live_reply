@@ -279,17 +279,30 @@ open class GenericChatAdapter : ChatAdapter {
         val list = mutableListOf<AccessibilityNodeInfo>()
         if (root == null) return list
 
-        fun traverse(node: AccessibilityNodeInfo) {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited < 400) {
+            val node = queue.removeFirst()
             list.add(node)
-            for (i in 0 until node.childCount) {
-                val child = node.getChild(i)
-                if (child != null) {
-                    traverse(child)
+            visited++
+            try {
+                val childCount = node.childCount
+                for (i in 0 until childCount) {
+                    try {
+                        val child = node.getChild(i)
+                        if (child != null) {
+                            queue.add(child)
+                        }
+                    } catch (t: Throwable) {
+                        // Ignore dead or recycled node
+                    }
                 }
+            } catch (t: Throwable) {
+                // Ignore inspection failure on invalid node
             }
         }
-
-        traverse(root)
         return list
     }
 

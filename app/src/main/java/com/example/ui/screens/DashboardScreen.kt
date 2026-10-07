@@ -258,6 +258,59 @@ fun DashboardScreen(
                 }
             }
 
+            // Accessibility Reconnect / "Not Working" Helper Card
+            if (!isAccessibilityActive) {
+                item {
+                    val isSettingsEnabled = remember(isAccessibilityActive) {
+                        com.example.accessibility.LiveReplyAccessibilityService.isServiceEnabledInSettings(context)
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = AmberAlert.copy(alpha = 0.15f)),
+                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(AmberAlert)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = AmberAlert)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = if (isSettingsEnabled) "ACCESSIBILITY NEEDS RECONNECT (\"Not Working\")" else "ENABLE ACCESSIBILITY SERVICE",
+                                    fontWeight = FontWeight.Bold,
+                                    color = AmberAlert,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            Text(
+                                text = if (isSettingsEnabled) {
+                                    "Your phone indicates the service is enabled, but the system connection is stopped (showing 'Not working' in Settings).\n\n" +
+                                    "Quick fix in 2 taps:\n" +
+                                    "1. Tap 'Fix Accessibility' below to open Installed apps.\n" +
+                                    "2. Tap 'Live AI Reply Chat Assistant'.\n" +
+                                    "3. Toggle the switch OFF and then back ON.\n" +
+                                    "4. If an older 'Live AI Reply' is also ON, turn it OFF."
+                                } else {
+                                    "To read chats and generate replies, enable 'Live AI Reply Chat Assistant' in Installed apps.\n\n" +
+                                    "Tip: If Android shows 'Not working', tap it, turn it OFF and back ON."
+                                },
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Button(
+                                onClick = {
+                                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                    context.startActivity(intent)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AmberAlert),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Fix Accessibility (Toggle Off & On)", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
             // 2. Mode Selector (Suggest, Approve, Auto)
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

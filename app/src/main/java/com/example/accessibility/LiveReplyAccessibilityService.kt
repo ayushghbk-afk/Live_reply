@@ -37,48 +37,85 @@ class LiveReplyAccessibilityService : AccessibilityService() {
         (applicationContext as LiveAiReplyApplication).aiProvider
     }
 
+    companion object {
+        var isServiceRunning: Boolean = false
+            private set
+
+        fun isServiceEnabledInSettings(context: android.content.Context): Boolean {
+            return try {
+                val am = context.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager
+                    ?: return false
+                val enabledServices = am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                enabledServices.any {
+                    it.resolveInfo?.serviceInfo?.packageName == context.packageName
+                }
+            } catch (e: Exception) {
+                false
+            }
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
-        LiveSessionState.setAccessibilityConnected(true)
-        repository.log("Accessibility", "Accessibility service connected and active", "SUCCESS")
-        startListeningToOverlayActions()
+        try {
+            val info = serviceInfo ?: android.accessibilityservice.AccessibilityServiceInfo()
+            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                    AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                    AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+            info.feedbackType = android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_GENERIC
+            info.flags = android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                    android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+            info.notificationTimeout = 120
+            serviceInfo = info
+
+            isServiceRunning = true
+            LiveSessionState.setAccessibilityConnected(true)
+            repository.log("Accessibility", "Accessibility service connected and active", "SUCCESS")
+            startListeningToOverlayActions()
+        } catch (t: Throwable) {
+            // Must never let onServiceConnected fail
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
-        val config = repository.appConfig.value
-        if (!config.isMonitoringActive || config.isPaused) {
-            return
-        }
+        try {
+            val config = repository.appConfig.value
+            if (!config.isMonitoringActive || config.isPaused) {
+                return
+            }
 
-        val packageName = event.packageName?.toString() ?: return
+            val packageName = event.packageName?.toString() ?: return
 
-        // Ignore our own app package to avoid recursion
-        if (packageName == applicationContext.packageName) return
+            // Ignore our own app package to avoid recursion
+            if (packageName == applicationContext.packageName) return
 
-        // Human override detection: if user types in the input field, pause auto-sending
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
-            val source = event.source
-            if (source != null && source.isEditable && source.isFocused && !source.isPassword) {
-                val entered = event.text?.joinToString("") ?: ""
-                val ourLatestReply = LiveSessionState.latestGeneratedReply.value ?: ""
-                // If the text being typed is not our programmatic insertion
-                if (entered.isNotBlank() && !entered.contains(ourLatestReply)) {
-                    LiveSessionState.setManualTyping(true)
-                    repository.log("Automation", "Manual typing detected in $packageName. Auto-send paused.", "INFO")
+            // Human override detection: if user types in the input field, pause auto-sending
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+                val source = event.source
+                if (source != null && source.isEditable && source.isFocused && !source.isPassword) {
+                    val entered = event.text?.joinToString("") ?: ""
+                    val ourLatestReply = LiveSessionState.latestGeneratedReply.value ?: ""
+                    // If the text being typed is not our programmatic insertion
+                    if (entered.isNotBlank() && !entered.contains(ourLatestReply)) {
+                        LiveSessionState.setManualTyping(true)
+                        repository.log("Automation", "Manual typing detected in $packageName. Auto-send paused.", "INFO")
+                    }
                 }
             }
-        }
 
-        // Only process content or window changes
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
-            event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            return
-        }
+            // Only process content or window changes
+            if (event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+                event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                return
+            }
 
-        // Schedule debounced inspection
-        scheduleDebouncedInspection(packageName)
+            // Schedule debounced inspection
+            scheduleDebouncedInspection(packageName)
+        } catch (t: Throwable) {
+            // Guarantee no unhandled exception kills the accessibility service
+        }
     }
 
     private fun scheduleDebouncedInspection(packageName: String) {
@@ -97,67 +134,71 @@ class LiveReplyAccessibilityService : AccessibilityService() {
     }
 
     private suspend fun inspectActiveChat(packageName: String) = withContext(Dispatchers.Default) {
-        val root = rootInActiveWindow ?: return@withContext
-        val adapter = ChatAdapterRegistry.getAdapterFor(packageName)
+        try {
+            val root = try { rootInActiveWindow } catch (e: Exception) { null } ?: return@withContext
+            val adapter = ChatAdapterRegistry.getAdapterFor(packageName)
 
-        // Safety filter: never capture password, PIN, or sensitive payment screens
-        if (containsSensitiveFields(root)) {
-            repository.log("Safety", "Sensitive security/password fields detected in $packageName. Skipping.", "WARN")
-            return@withContext
-        }
-
-        val chatTitle = adapter.getChatTitle(root) ?: adapter.appName
-        LiveSessionState.updateActiveChat(packageName, chatTitle)
-
-        // Check if user paused this specific conversation
-        if (repository.isConversationPaused(packageName, chatTitle)) {
-            return@withContext
-        }
-
-        // Extract messages using accessibility node tree
-        var messages = adapter.extractConversation(root)
-
-        // Fallback to local OCR if accessibility yielded no messages and OCR is enabled
-        val config = repository.appConfig.value
-        if (messages.isEmpty() && config.ocrFallbackEnabled) {
-            val captureService = ScreenCaptureService.instance
-            val frame = captureService?.captureLatestFrame()
-            if (frame != null) {
-                messages = try {
-                    ocrEngine.recognizeConversation(frame)
-                } finally {
-                    if (!frame.isRecycled) {
-                        frame.recycle()
-                    }
-                }
-                repository.log("OCR", "Extracted ${messages.size} messages via local OCR and deleted screenshot immediately", "INFO")
+            // Safety filter: never capture password, PIN, or sensitive payment screens
+            if (containsSensitiveFields(root)) {
+                repository.log("Safety", "Sensitive security/password fields detected in $packageName. Skipping.", "WARN")
+                return@withContext
             }
+
+            val chatTitle = adapter.getChatTitle(root) ?: adapter.appName
+            LiveSessionState.updateActiveChat(packageName, chatTitle)
+
+            // Check if user paused this specific conversation
+            if (repository.isConversationPaused(packageName, chatTitle)) {
+                return@withContext
+            }
+
+            // Extract messages using accessibility node tree
+            var messages = adapter.extractConversation(root)
+
+            // Fallback to local OCR if accessibility yielded no messages and OCR is enabled
+            val config = repository.appConfig.value
+            if (messages.isEmpty() && config.ocrFallbackEnabled) {
+                val captureService = ScreenCaptureService.instance
+                val frame = captureService?.captureLatestFrame()
+                if (frame != null) {
+                    messages = try {
+                        ocrEngine.recognizeConversation(frame)
+                    } finally {
+                        if (!frame.isRecycled) {
+                            frame.recycle()
+                        }
+                    }
+                    repository.log("OCR", "Extracted ${messages.size} messages via local OCR and deleted screenshot immediately", "INFO")
+                }
+            }
+
+            if (messages.isEmpty()) return@withContext
+
+            // Identify the latest incoming message burst (captures all consecutive rapid-fire messages)
+            val burst = ChatReaderEngine.extractLatestIncomingBurst(messages) ?: return@withContext
+            val latestIncoming = burst.individualMessages.last()
+
+            // Loop and duplicate prevention check
+            if (!loopPrevention.shouldProcessMessage(latestIncoming)) {
+                return@withContext
+            }
+
+            // We have a confirmed new incoming message!
+            loopPrevention.markMessageProcessed(latestIncoming.text)
+            val textToReplyTo = burst.combinedText
+            val displaySender = burst.primarySender ?: chatTitle
+
+            LiveSessionState.setNewIncomingMessage(textToReplyTo, messages)
+            repository.log("Detector", "New incoming message from $displaySender in $chatTitle: \"${textToReplyTo.replace("\n", " // ").take(60)}\"", "INFO")
+
+            // Auto-update conversation memory with new message context
+            autoLearnConversationMemory(packageName, chatTitle, textToReplyTo)
+
+            // Trigger AI Reply Generation with the full burst context
+            processIncomingMessage(textToReplyTo, messages, packageName)
+        } catch (t: Throwable) {
+            repository.log("Accessibility", "Safe recovery from window change: ${t.message}", "WARN")
         }
-
-        if (messages.isEmpty()) return@withContext
-
-        // Identify the latest incoming message burst (captures all consecutive rapid-fire messages)
-        val burst = ChatReaderEngine.extractLatestIncomingBurst(messages) ?: return@withContext
-        val latestIncoming = burst.individualMessages.last()
-
-        // Loop and duplicate prevention check
-        if (!loopPrevention.shouldProcessMessage(latestIncoming)) {
-            return@withContext
-        }
-
-        // We have a confirmed new incoming message!
-        loopPrevention.markMessageProcessed(latestIncoming.text)
-        val textToReplyTo = burst.combinedText
-        val displaySender = burst.primarySender ?: chatTitle
-
-        LiveSessionState.setNewIncomingMessage(textToReplyTo, messages)
-        repository.log("Detector", "New incoming message from $displaySender in $chatTitle: \"${textToReplyTo.replace("\n", " // ").take(60)}\"", "INFO")
-
-        // Auto-update conversation memory with new message context
-        autoLearnConversationMemory(packageName, chatTitle, textToReplyTo)
-
-        // Trigger AI Reply Generation with the full burst context
-        processIncomingMessage(textToReplyTo, messages, packageName)
     }
 
     /**
