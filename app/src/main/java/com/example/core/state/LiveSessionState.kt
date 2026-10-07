@@ -101,6 +101,9 @@ object LiveSessionState {
         object PauseCurrentChat : OverlayAction()
         object ScanScreenNow : OverlayAction()
         data class ToggleAutoSee(val enabled: Boolean) : OverlayAction()
+        data class SwitchPersona(val personaId: Long) : OverlayAction()
+        data class SetOperatingMode(val mode: OperatingMode) : OverlayAction()
+        data class ToggleTypingSimulation(val enabled: Boolean) : OverlayAction()
     }
 
     private val _overlayActionEvents = MutableSharedFlow<OverlayAction>(extraBufferCapacity = 10)

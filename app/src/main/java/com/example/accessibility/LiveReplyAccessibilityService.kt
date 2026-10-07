@@ -11,6 +11,7 @@ import com.example.core.model.ProcessingState
 import com.example.core.state.LiveSessionState
 import com.example.ocr.OcrEngine
 import com.example.ocr.ScreenCaptureService
+import com.example.storage.ConversationMemoryEntity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -148,8 +149,51 @@ class LiveReplyAccessibilityService : AccessibilityService() {
         LiveSessionState.setNewIncomingMessage(latestIncoming.text, messages)
         repository.log("Detector", "New incoming message in $chatTitle: \"${latestIncoming.text.take(60)}\"", "INFO")
 
+        // Auto-update conversation memory with new message context
+        autoLearnConversationMemory(packageName, chatTitle, latestIncoming.text)
+
         // Trigger AI Reply Generation
         processIncomingMessage(latestIncoming.text, messages, packageName)
+    }
+
+    /**
+     * Automatically builds and retains long-term memory about contacts,
+     * conversation topics, and relationship dynamics.
+     */
+    private suspend fun autoLearnConversationMemory(
+        packageName: String,
+        chatTitle: String,
+        newIncomingText: String
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val key = "$packageName:$chatTitle"
+            val existing = repository.getMemory(key)
+            val updated = if (existing == null) {
+                ConversationMemoryEntity(
+                    conversationKey = key,
+                    contactName = chatTitle,
+                    packageName = packageName,
+                    summary = "Active conversation in $packageName.",
+                    facts = "- First observed message: \"${newIncomingText.take(80)}\"",
+                    relationshipNote = "Frequent chat contact.",
+                    lastInteractedAt = System.currentTimeMillis()
+                )
+            } else {
+                val existingFacts = existing.facts
+                val hasFactAlready = existingFacts.contains(newIncomingText.take(40))
+                val newFacts = if (!hasFactAlready && existingFacts.length < 500) {
+                    "$existingFacts\n- Recent topic: \"${newIncomingText.take(60)}\""
+                } else existingFacts
+
+                existing.copy(
+                    facts = newFacts,
+                    lastInteractedAt = System.currentTimeMillis()
+                )
+            }
+            repository.saveMemory(updated)
+        } catch (e: Exception) {
+            // Memory storage failure is non-fatal
+        }
     }
 
     private suspend fun processIncomingMessage(
@@ -248,23 +292,24 @@ class LiveReplyAccessibilityService : AccessibilityService() {
 
         delay(300)
 
-        // Find send button and click
+        // Find send button and execute smart dispatch
         LiveSessionState.updateState(ProcessingState.SENDING)
         val refreshedRoot = rootInActiveWindow ?: root
         val sendBtn = adapter.findSendButton(refreshedRoot)
 
-        if (sendBtn != null) {
-            val clicked = sendBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            if (clicked) {
-                loopPrevention.recordSentReply(reply)
-                LiveSessionState.markReplySent(reply)
-                repository.log("Automation", "Reply sent successfully in $packageName!", "SUCCESS")
-            } else {
-                LiveSessionState.setError("Found send button but click action failed.")
-            }
+        // Use adapter's specialized send action logic:
+        // - WhatsApp supports dedicated button or Enter-to-send
+        // - ChatGPT ignores Enter key, requires tapping the dedicated submit/arrow button
+        // - Telegram/Instagram/Discord click the respective send button
+        val sentSuccessfully = adapter.dispatchSendAction(inputField, sendBtn)
+
+        if (sentSuccessfully) {
+            loopPrevention.recordSentReply(reply)
+            LiveSessionState.markReplySent(reply)
+            repository.log("Automation", "Reply sent successfully in $packageName via ${adapter.appName} adapter!", "SUCCESS")
         } else {
-            // Cannot find send button reliably - leave text in input box for user to tap send
-            repository.log("Automation", "Inserted text into chat. Please tap send.", "INFO")
+            // Leave text in input box for user to tap send manually if action couldn't be dispatched
+            repository.log("Automation", "Inserted text into chat input. Please tap send if auto-tap was resisted.", "INFO")
             LiveSessionState.markReplySent(reply)
         }
     }
@@ -274,7 +319,6 @@ class LiveReplyAccessibilityService : AccessibilityService() {
         text: String,
         cpm: Int
     ): Boolean {
-        // Average delay per character based on CPM
         val charDelayMs = ((60000L / cpm.coerceIn(100, 1000))).coerceIn(30L, 200L)
         val builder = StringBuilder()
 
@@ -342,6 +386,19 @@ class LiveReplyAccessibilityService : AccessibilityService() {
                     is LiveSessionState.OverlayAction.ToggleAutoSee -> {
                         LiveSessionState.setAutoSeeActive(action.enabled)
                         repository.log("LiveVision", "Auto-See on screen toggled: ${action.enabled}", "INFO")
+                    }
+                    is LiveSessionState.OverlayAction.SwitchPersona -> {
+                        repository.selectPersona(action.personaId)
+                        val p = repository.getSelectedPersona()
+                        if (p != null) {
+                            LiveSessionState.setActivePersonaName("${p.category.icon} ${p.name}")
+                        }
+                    }
+                    is LiveSessionState.OverlayAction.SetOperatingMode -> {
+                        repository.updateOperatingMode(action.mode)
+                    }
+                    is LiveSessionState.OverlayAction.ToggleTypingSimulation -> {
+                        repository.updateSimulateTyping(action.enabled)
                     }
                 }
             }

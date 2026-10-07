@@ -52,7 +52,13 @@ class OpenAiCompatibleProvider(
             addAll(secureStorage.fallbackModels.map { it.trim() }.filter { it.isNotEmpty() && it != secureStorage.primaryModel.trim() })
         }
 
-        val systemPrompt = buildSystemPrompt(persona, config)
+        val pkg = com.example.core.state.LiveSessionState.currentPackageName.value ?: ""
+        val title = com.example.core.state.LiveSessionState.currentChatTitle.value ?: ""
+        val memory = if (pkg.isNotBlank() && title.isNotBlank()) {
+            repository.getMemory("$pkg:$title")
+        } else null
+
+        val systemPrompt = buildSystemPrompt(persona, config, memory)
 
         var lastError: Throwable? = null
 
@@ -207,7 +213,11 @@ class OpenAiCompatibleProvider(
         }
     }
 
-    private fun buildSystemPrompt(persona: PersonaEntity, config: AppConfig): String {
+    private fun buildSystemPrompt(
+        persona: PersonaEntity,
+        config: AppConfig,
+        memory: com.example.storage.ConversationMemoryEntity? = null
+    ): String {
         val customGlobal = secureStorage.customSystemPrompt.trim()
         val languageInstruction = if (config.translationModeEnabled && config.targetLanguage != "Auto") {
             "Translate and reply in ${config.targetLanguage}."
@@ -246,6 +256,15 @@ class OpenAiCompatibleProvider(
             } else if (persona.category == com.example.core.model.PersonaCategory.GENRE) {
                 append("\nGENRE IMMERSION DIRECTIVE:\n")
                 append("- Format your reply strictly within the world and stylistic tropes of ${persona.name}.\n")
+            }
+
+            if (memory != null) {
+                append("\nCONVERSATION MEMORY & CONTACT BACKGROUND:\n")
+                append("Contact Name: ${memory.contactName}\n")
+                if (memory.relationshipNote.isNotBlank()) append("Relationship: ${memory.relationshipNote}\n")
+                if (memory.summary.isNotBlank()) append("Conversation Dynamic: ${memory.summary}\n")
+                if (memory.facts.isNotBlank()) append("Remembered Facts:\n${memory.facts}\n")
+                append("- Guideline: Subtly weave these remembered facts into your response when contextually fitting.\n")
             }
 
             if (customGlobal.isNotBlank()) {

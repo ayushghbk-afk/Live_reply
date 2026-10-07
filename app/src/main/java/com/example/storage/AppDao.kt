@@ -90,4 +90,23 @@ interface AppDao {
 
     @Query("DELETE FROM paused_conversations WHERE conversationKey = :key")
     suspend fun resumeConversation(key: String)
+
+    // Conversation Memories
+    @Query("SELECT * FROM conversation_memories ORDER BY lastInteractedAt DESC")
+    fun getAllMemories(): Flow<List<ConversationMemoryEntity>>
+
+    @Query("SELECT * FROM conversation_memories WHERE conversationKey = :key LIMIT 1")
+    suspend fun getMemory(key: String): ConversationMemoryEntity?
+
+    @Query("SELECT * FROM conversation_memories WHERE conversationKey = :key LIMIT 1")
+    fun getMemoryFlow(key: String): Flow<ConversationMemoryEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateMemory(memory: ConversationMemoryEntity)
+
+    @Query("DELETE FROM conversation_memories WHERE conversationKey = :key")
+    suspend fun deleteMemory(key: String)
+
+    @Query("DELETE FROM conversation_memories")
+    suspend fun clearAllMemories()
 }

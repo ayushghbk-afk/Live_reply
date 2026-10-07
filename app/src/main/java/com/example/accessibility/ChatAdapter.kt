@@ -14,6 +14,17 @@ interface ChatAdapter {
     fun findInputField(rootNode: AccessibilityNodeInfo): AccessibilityNodeInfo?
     fun findSendButton(rootNode: AccessibilityNodeInfo): AccessibilityNodeInfo?
     fun getChatTitle(rootNode: AccessibilityNodeInfo): String?
+    fun dispatchSendAction(inputField: AccessibilityNodeInfo?, sendButton: AccessibilityNodeInfo?): Boolean {
+        // Default send strategy: Click the dedicated send button if found, or click input field action
+        if (sendButton != null) {
+            val clicked = sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (clicked) return true
+        }
+        if (inputField != null) {
+            return inputField.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }
+        return false
+    }
 }
 
 open class GenericChatAdapter : ChatAdapter {

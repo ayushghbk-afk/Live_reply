@@ -50,3 +50,14 @@ data class PausedConversationEntity(
     val chatTitle: String,
     val pausedAt: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "conversation_memories")
+data class ConversationMemoryEntity(
+    @PrimaryKey val conversationKey: String, // e.g. "com.whatsapp:Sarah" or "com.openai.chatgpt:Prompt"
+    val contactName: String,
+    val packageName: String,
+    val summary: String = "",
+    val facts: String = "", // Key remembered facts about contact or conversation
+    val relationshipNote: String = "",
+    val lastInteractedAt: Long = System.currentTimeMillis()
+)

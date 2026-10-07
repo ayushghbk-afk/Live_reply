@@ -110,6 +110,28 @@ class AppRepository(
         log("Privacy", "Resumed conversation key $key", "INFO")
     }
 
+    // Conversation Memories
+    val memories: Flow<List<ConversationMemoryEntity>> = appDao.getAllMemories()
+
+    suspend fun getMemory(key: String): ConversationMemoryEntity? = appDao.getMemory(key)
+
+    fun getMemoryFlow(key: String): Flow<ConversationMemoryEntity?> = appDao.getMemoryFlow(key)
+
+    suspend fun saveMemory(memory: ConversationMemoryEntity) {
+        appDao.insertOrUpdateMemory(memory)
+        log("Memory", "Saved persistent memory for '${memory.contactName}'", "SUCCESS")
+    }
+
+    suspend fun deleteMemory(key: String) {
+        appDao.deleteMemory(key)
+        log("Memory", "Removed memory for '$key'", "INFO")
+    }
+
+    suspend fun clearAllMemories() {
+        appDao.clearAllMemories()
+        log("Memory", "Cleared all conversation memories", "WARN")
+    }
+
     // Logs
     val recentLogs: Flow<List<DiagnosticLogEntity>> = appDao.getRecentLogs()
 
@@ -155,6 +177,12 @@ class AppRepository(
         _appConfig.update { it.copy(smartFrameDiffing = enabled) }
         saveConfigValue("smart_frame_diffing", enabled)
         log("Config", "Smart frame change detection set to $enabled", "INFO")
+    }
+
+    fun updateSimulateTyping(enabled: Boolean) {
+        _appConfig.update { it.copy(simulateTyping = enabled) }
+        saveConfigValue("simulate_typing", enabled)
+        log("Config", "Simulate human typing set to $enabled", "INFO")
     }
 
     fun updateMonitoringActive(active: Boolean) {

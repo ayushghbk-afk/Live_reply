@@ -9,8 +9,6 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
-import android.view.MotionEvent
-import android.view.View
 import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,15 +36,20 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,10 +63,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -87,6 +92,7 @@ import com.example.core.model.OperatingMode
 import com.example.core.model.ProcessingState
 import com.example.core.state.LiveSessionState
 import com.example.notifications.NotificationHelper
+import com.example.storage.AppRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -163,13 +169,16 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 40
             y = 200
         }
+
+        val repo = (applicationContext as LiveAiReplyApplication).repository
 
         overlayView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@OverlayService)
@@ -186,6 +195,7 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
                     )
                 ) {
                     OverlayContent(
+                        repository = repo,
                         onDragDelta = { dx, dy ->
                             params.x += dx.toInt()
                             params.y += dy.toInt()
@@ -241,11 +251,17 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
 
 @Composable
 fun OverlayContent(
+    repository: AppRepository,
     onDragDelta: (Float, Float) -> Unit,
     onRequestFocus: (Boolean) -> Unit
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     var isEditing by remember { mutableStateOf(false) }
+    var showQuickControls by remember { mutableStateOf(false) }
+
+    val config by repository.appConfig.collectAsState()
+    val allPersonas by repository.personas.collectAsState(initial = emptyList())
+    val selectedPersona by repository.selectedPersonaFlow.collectAsState(initial = null)
 
     val state by LiveSessionState.processingState.collectAsState()
     val incomingText by LiveSessionState.latestIncomingMessage.collectAsState()
@@ -253,8 +269,12 @@ fun OverlayContent(
     val editedReply by LiveSessionState.editedReply.collectAsState()
     val errorMsg by LiveSessionState.errorMessage.collectAsState()
     val activeChat by LiveSessionState.currentChatTitle.collectAsState()
-    val activePersona by LiveSessionState.activePersonaName.collectAsState()
+    val activePersonaName by LiveSessionState.activePersonaName.collectAsState()
+    val isAutoSeeActive by LiveSessionState.isAutoSeeActive.collectAsState()
+    val isScreenCaptureActive by LiveSessionState.isScreenCaptureActive.collectAsState()
     val clipboardManager = LocalClipboardManager.current
+
+    val currentPersonaDisplay = selectedPersona?.let { "${it.category.icon} ${it.name}" } ?: activePersonaName
 
     val dotColor = when (state) {
         ProcessingState.MONITORING -> Color(0xFF00E676)
@@ -383,7 +403,7 @@ fun OverlayContent(
             }
         }
     } else {
-        // Expanded Interactive Card
+        // Expanded Interactive Card with Quick Persona & System Controls
         Card(
             modifier = Modifier
                 .widthIn(min = 280.dp, max = 340.dp)
@@ -411,12 +431,13 @@ fun OverlayContent(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Live AI Reply • $activePersona",
+                            text = currentPersonaDisplay,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontSize = 13.sp,
+                            maxLines = 1
                         )
                         Text(
                             text = "$activeChat • ${state.label}",
@@ -425,19 +446,132 @@ fun OverlayContent(
                         )
                     }
 
-                    IconButton(
-                        onClick = {
-                            isExpanded = false
-                            onRequestFocus(false)
-                        },
-                        modifier = Modifier.size(28.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { showQuickControls = !showQuickControls },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = "Quick Controls",
+                                tint = if (showQuickControls) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                isExpanded = false
+                                onRequestFocus(false)
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Minimize",
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Quick Controls Panel (Mode, Typing Simulation, Quick Persona Carousel)
+                if (showQuickControls) {
+                    Surface(
+                        color = Color(0xFF1E2842),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Minimize",
-                            tint = Color.White.copy(alpha = 0.7f),
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "QUICK CONTROLS & CHARACTERS",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF00E5FF)
+                            )
+
+                            // Quick Persona Carousel in Floating Window
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(allPersonas) { persona ->
+                                    val isSelected = persona.id == selectedPersona?.id
+                                    Surface(
+                                        color = if (isSelected) Color(0xFF6C8CFF) else Color(0xFF263252),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.clickable {
+                                            LiveSessionState.triggerAction(LiveSessionState.OverlayAction.SwitchPersona(persona.id))
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "${persona.category.icon} ${persona.name.take(16)}",
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else Color(0xFFCFD8DC),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Operating Mode Toggles: Suggest, Approve, Auto
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                OperatingMode.entries.forEach { mode ->
+                                    val active = config.operatingMode == mode
+                                    Surface(
+                                        color = if (active) Color(0xFF00C853) else Color(0xFF263252),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                LiveSessionState.triggerAction(LiveSessionState.OverlayAction.SetOperatingMode(mode))
+                                            }
+                                    ) {
+                                        Text(
+                                            text = mode.displayName,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (active) Color.Black else Color.White,
+                                            modifier = Modifier.padding(vertical = 4.dp),
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Simulate Human Typing toggle
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Keyboard, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Simulate Typing Speed", fontSize = 11.sp, color = Color.White)
+                                }
+                                Surface(
+                                    color = if (config.simulateTyping) Color(0xFF00E5FF) else Color(0xFF37474F),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.clickable {
+                                        LiveSessionState.triggerAction(LiveSessionState.OverlayAction.ToggleTypingSimulation(!config.simulateTyping))
+                                    }
+                                ) {
+                                    Text(
+                                        text = if (config.simulateTyping) "ON" else "OFF",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (config.simulateTyping) Color.Black else Color.White,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
