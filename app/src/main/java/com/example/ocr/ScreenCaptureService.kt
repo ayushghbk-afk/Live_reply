@@ -322,7 +322,8 @@ class ScreenCaptureService : Service() {
 
         if (detectedMessages.isEmpty()) return@withContext
 
-        val latestIncoming = detectedMessages.lastOrNull { it.isIncoming } ?: return@withContext
+        val burst = com.example.accessibility.ChatReaderEngine.extractLatestIncomingBurst(detectedMessages) ?: return@withContext
+        val latestIncoming = burst.individualMessages.last()
 
         // Loop & duplicate prevention check
         if (!loopPrevention.shouldProcessMessage(latestIncoming)) {
@@ -331,15 +332,16 @@ class ScreenCaptureService : Service() {
 
         // Confirmed new incoming message seen live on screen!
         loopPrevention.markMessageProcessed(latestIncoming.text)
-        LiveSessionState.setNewIncomingMessage(latestIncoming.text, detectedMessages)
-        repository.log("Pipeline", "👁 Spotted incoming message: \"${latestIncoming.text.take(50)}\"", "INFO")
+        val textToReplyTo = burst.combinedText
+        LiveSessionState.setNewIncomingMessage(textToReplyTo, detectedMessages)
+        repository.log("Pipeline", "👁 Spotted incoming message burst: \"${textToReplyTo.replace("\n", " // ").take(50)}\"", "INFO")
 
         // STEP 4: Feed to AI with Selected Persona / Tone / Cosplay Mode
         val persona = repository.getSelectedPersona() ?: return@withContext
 
         LiveSessionState.updateState(ProcessingState.THINKING)
         repository.log("Pipeline", "🧠 Step 4/5: Feeding to AI [${persona.category.displayName}: ${persona.name}]...", "INFO")
-        val result = aiProvider.generateReply(detectedMessages, latestIncoming.text, persona, config)
+        val result = aiProvider.generateReply(detectedMessages, textToReplyTo, persona, config)
 
         result.fold(
             onSuccess = { reply ->

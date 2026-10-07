@@ -272,6 +272,7 @@ fun OverlayContent(
     val activePersonaName by LiveSessionState.activePersonaName.collectAsState()
     val isAutoSeeActive by LiveSessionState.isAutoSeeActive.collectAsState()
     val isScreenCaptureActive by LiveSessionState.isScreenCaptureActive.collectAsState()
+    val conversationContext by LiveSessionState.conversationContext.collectAsState()
     val clipboardManager = LocalClipboardManager.current
 
     val currentPersonaDisplay = selectedPersona?.let { "${it.category.icon} ${it.name}" } ?: activePersonaName
@@ -617,24 +618,81 @@ fun OverlayContent(
                     }
                 }
 
-                // Incoming Message Box
+                // Incoming Message Box with Rich Chat Reading Context
                 if (!incomingText.isNullOrBlank()) {
+                    val burstInfo = remember(conversationContext, incomingText) {
+                        com.example.accessibility.ChatReaderEngine.extractLatestIncomingBurst(conversationContext)
+                    }
+
                     Surface(
                         color = Color(0xFF1E2438),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Text(
-                                text = "LATEST MESSAGE:",
-                                color = Color.White.copy(alpha = 0.6f),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "READING CHAT:",
+                                        color = Color(0xFF80D8FF),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    burstInfo?.primarySender?.let { sender ->
+                                        Spacer(Modifier.width(6.dp))
+                                        Surface(
+                                            color = Color(0xFF2C3E6B),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = sender,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (burstInfo != null && burstInfo.individualMessages.size > 1) {
+                                    Text(
+                                        text = "${burstInfo.individualMessages.size} rapid msgs",
+                                        color = Color(0xFF00E5FF),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            // Show quoted message preview if detected
+                            burstInfo?.quotedMessageText?.let { quote ->
+                                Surface(
+                                    color = Color(0xFF141926),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(modifier = Modifier.padding(4.dp)) {
+                                        Text(
+                                            text = "↳ Replying to: \"${quote.take(50)}\"",
+                                            color = Color(0xFFB0BEC5),
+                                            fontSize = 10.sp,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+
                             Text(
                                 text = incomingText!!,
                                 color = Color.White,
                                 fontSize = 12.sp,
-                                maxLines = 3
+                                maxLines = 5
                             )
                         }
                     }

@@ -31,13 +31,44 @@ data class ChatMessage(
     val text: String,
     val isIncoming: Boolean,
     val senderName: String? = null,
+    val replyToText: String? = null,
+    val replyToSender: String? = null,
+    val isSystemMessage: Boolean = false,
+    val mediaType: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val confidence: Float = 1.0f,
     val boundsLeft: Int = 0,
     val boundsTop: Int = 0,
     val boundsRight: Int = 0,
     val boundsBottom: Int = 0
-)
+) {
+    /**
+     * Formats this message with sender and quote details for clear AI context.
+     */
+    fun formatForAi(fallbackContactName: String? = null): String {
+        val speaker = if (!isIncoming) {
+            "You"
+        } else {
+            senderName?.takeIf { it.isNotBlank() } ?: fallbackContactName?.takeIf { it.isNotBlank() } ?: "Contact"
+        }
+
+        val quotePrefix = if (!replyToText.isNullOrBlank()) {
+            val quotedWhom = replyToSender?.takeIf { it.isNotBlank() } ?: "earlier message"
+            "(replying to $quotedWhom: \"${replyToText.take(60)}\") "
+        } else ""
+
+        val mediaPrefix = when (mediaType) {
+            "voice_note" -> "[Voice Message] "
+            "photo" -> "[Photo] "
+            "video" -> "[Video] "
+            "document" -> "[Document] "
+            "sticker" -> "[Sticker] "
+            else -> ""
+        }
+
+        return "[$speaker]: $quotePrefix$mediaPrefix$text".trim()
+    }
+}
 
 enum class PersonaCategory(val displayName: String, val icon: String) {
     TONE("AI Tone", "🎭"),

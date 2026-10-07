@@ -15,7 +15,7 @@ interface ChatAdapter {
     fun findSendButton(rootNode: AccessibilityNodeInfo): AccessibilityNodeInfo?
     fun getChatTitle(rootNode: AccessibilityNodeInfo): String?
     fun dispatchSendAction(inputField: AccessibilityNodeInfo?, sendButton: AccessibilityNodeInfo?): Boolean {
-        // Default send strategy: Click the dedicated send button if found, or click input field action
+        // Default send strategy: Click dedicated send button if found, or click input field
         if (sendButton != null) {
             val clicked = sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             if (clicked) return true
@@ -34,19 +34,17 @@ open class GenericChatAdapter : ChatAdapter {
     override fun matches(pkg: String): Boolean = true
 
     override fun isChatScreen(rootNode: AccessibilityNodeInfo): Boolean {
-        // A chat screen typically has at least one editable input field or message list
         return findInputField(rootNode) != null
     }
 
     override fun getChatTitle(rootNode: AccessibilityNodeInfo): String? {
-        // Search header / actionbar title
         val outBounds = Rect()
         for (node in getAllNodes(rootNode)) {
             node.getBoundsInScreen(outBounds)
             // Near top of screen (y < 350) and has text
             if (outBounds.top < 350 && outBounds.bottom > 50 && !node.text.isNullOrBlank()) {
                 val txt = node.text.toString().trim()
-                if (txt.length in 2..40 && !txt.contains(":") && !txt.contains("AM") && !txt.contains("PM")) {
+                if (txt.length in 2..40 && !ChatReaderEngine.isSystemNoise(txt)) {
                     return txt
                 }
             }
@@ -55,10 +53,114 @@ open class GenericChatAdapter : ChatAdapter {
     }
 
     override fun extractConversation(rootNode: AccessibilityNodeInfo): List<ChatMessage> {
-        val messages = mutableListOf<ChatMessage>()
         val allNodes = getAllNodes(rootNode)
         val displayWidth = getEstimatedWindowWidth(rootNode)
 
+        // 1. First attempt: Grouped Container Extraction (RecyclerView / ListView message rows)
+        val containerMessages = extractFromMessageContainers(allNodes, displayWidth)
+        if (containerMessages.isNotEmpty()) {
+            return containerMessages.sortedBy { it.boundsTop }
+        }
+
+        // 2. Fallback: Flat Node Extraction with deep noise filtering & clustering
+        return extractFromFlatNodes(allNodes, displayWidth).sortedBy { it.boundsTop }
+    }
+
+    /**
+     * Inspects structured message item containers to accurately isolate sender, quote, and body.
+     */
+    protected open fun extractFromMessageContainers(
+        allNodes: List<AccessibilityNodeInfo>,
+        displayWidth: Int
+    ): List<ChatMessage> {
+        val results = mutableListOf<ChatMessage>()
+        val nodeBounds = Rect()
+
+        // Find candidate message row containers (ViewGroup, LinearLayout, FrameLayout with multiple children)
+        val candidateContainers = allNodes.filter { node ->
+            val childCount = node.childCount
+            childCount in 1..10 &&
+            !node.isEditable &&
+            !node.isPassword &&
+            node.className?.contains("Button", ignoreCase = true) != true
+        }
+
+        for (container in candidateContainers) {
+            container.getBoundsInScreen(nodeBounds)
+
+            // Exclude status bar and input bar areas
+            if (nodeBounds.top < 100 || nodeBounds.bottom > 2200 || nodeBounds.height() < 30) continue
+
+            val textChildren = mutableListOf<Pair<AccessibilityNodeInfo, Rect>>()
+            for (i in 0 until container.childCount) {
+                val child = container.getChild(i) ?: continue
+                if (!child.text.isNullOrBlank() && !child.isEditable && !child.isPassword) {
+                    val childBounds = Rect()
+                    child.getBoundsInScreen(childBounds)
+                    val rawText = child.text.toString().trim()
+                    if (rawText.isNotBlank() && !ChatReaderEngine.isSystemNoise(rawText)) {
+                        textChildren.add(Pair(child, childBounds))
+                    }
+                }
+            }
+
+            if (textChildren.isEmpty()) continue
+
+            // Determine incoming vs outgoing from container placement
+            val centerX = nodeBounds.centerX()
+            val isIncoming = centerX < (displayWidth * 0.52f)
+
+            var senderName: String? = null
+            var quoteText: String? = null
+            val bodyParts = mutableListOf<String>()
+
+            // Sort child text by vertical appearance
+            textChildren.sortBy { it.second.top }
+
+            for ((child, bounds) in textChildren) {
+                val txt = child.text.toString().trim()
+                val idName = child.viewIdResourceName?.lowercase() ?: ""
+                val desc = child.contentDescription?.toString()?.lowercase() ?: ""
+
+                if (idName.contains("sender") || idName.contains("name") || idName.contains("author") || idName.contains("contact")) {
+                    senderName = txt
+                } else if (idName.contains("quote") || idName.contains("reply") || desc.contains("reply") || txt.startsWith("Replying to", ignoreCase = true)) {
+                    quoteText = txt
+                } else {
+                    bodyParts.add(txt)
+                }
+            }
+
+            val finalBody = bodyParts.joinToString(" ").trim()
+            if (finalBody.length >= 2) {
+                results.add(
+                    ChatMessage(
+                        id = "${nodeBounds.left}_${nodeBounds.top}_${finalBody.hashCode()}",
+                        text = finalBody,
+                        isIncoming = isIncoming,
+                        senderName = senderName,
+                        replyToText = quoteText,
+                        timestamp = System.currentTimeMillis(),
+                        boundsLeft = nodeBounds.left,
+                        boundsTop = nodeBounds.top,
+                        boundsRight = nodeBounds.right,
+                        boundsBottom = nodeBounds.bottom
+                    )
+                )
+            }
+        }
+
+        return results
+    }
+
+    /**
+     * Fallback extraction directly from text nodes when containers cannot be identified.
+     */
+    protected open fun extractFromFlatNodes(
+        allNodes: List<AccessibilityNodeInfo>,
+        displayWidth: Int
+    ): List<ChatMessage> {
+        val messages = mutableListOf<ChatMessage>()
         val textNodes = allNodes.filter { node ->
             !node.text.isNullOrBlank() &&
             !node.isEditable &&
@@ -71,14 +173,15 @@ open class GenericChatAdapter : ChatAdapter {
             val text = node.text.toString().trim()
             if (text.length < 2) continue
 
-            // Filter out system UI like timestamps only (e.g. "10:45 AM") or status icons
-            if (isTimestampOnly(text)) continue
+            // Filter out system UI like timestamps only or status icons
+            if (ChatReaderEngine.isSystemNoise(text)) continue
 
             node.getBoundsInScreen(nodeBounds)
 
-            // Determine if incoming or outgoing based on horizontal placement:
-            // Chat bubbles on the left (center < 48% of screen) are incoming messages
-            // Chat bubbles on the right (center > 52% of screen) are outgoing user messages
+            // Exclude status bar and keyboard/input area
+            if (nodeBounds.top < 100) continue
+
+            // Determine if incoming or outgoing based on horizontal placement
             val centerX = nodeBounds.centerX()
             val isIncoming = if (displayWidth > 0) {
                 centerX < (displayWidth * 0.52f)
@@ -86,20 +189,32 @@ open class GenericChatAdapter : ChatAdapter {
                 nodeBounds.left < 300
             }
 
+            // Check if media indicator
+            val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+            val mediaType = when {
+                desc.contains("voice message") || desc.contains("audio") -> "voice_note"
+                desc.contains("photo") || desc.contains("image") -> "photo"
+                desc.contains("video") -> "video"
+                desc.contains("sticker") -> "sticker"
+                else -> null
+            }
+
             messages.add(
                 ChatMessage(
                     id = "${nodeBounds.left}_${nodeBounds.top}_${text.hashCode()}",
                     text = text,
                     isIncoming = isIncoming,
+                    mediaType = mediaType,
                     timestamp = System.currentTimeMillis(),
                     boundsLeft = nodeBounds.left,
-                    boundsRight = nodeBounds.right
+                    boundsTop = nodeBounds.top,
+                    boundsRight = nodeBounds.right,
+                    boundsBottom = nodeBounds.bottom
                 )
             )
         }
 
-        // Sort vertically by top coordinate (older top, newer bottom)
-        return messages.sortedBy { it.id.substringAfter("_").substringBefore("_").toIntOrNull() ?: 0 }
+        return messages
     }
 
     override fun findInputField(rootNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -151,7 +266,7 @@ open class GenericChatAdapter : ChatAdapter {
             }
         }
 
-        // 4. Look for clickable icon near the bottom right (x > 80% of width, y > 80% of height)
+        // 4. Look for clickable icon near the bottom right (x > 75% of width, y > 800)
         val width = getEstimatedWindowWidth(rootNode)
         val rect = Rect()
         return all.filter { it.isClickable && !it.isEditable }.firstOrNull {
@@ -182,10 +297,5 @@ open class GenericChatAdapter : ChatAdapter {
         val rect = Rect()
         rootNode.getBoundsInScreen(rect)
         return if (rect.width() > 0) rect.width() else 1080
-    }
-
-    private fun isTimestampOnly(text: String): Boolean {
-        val regex = Regex("^\\d{1,2}:\\d{2}(\\s?(AM|PM|am|pm))?$")
-        return regex.matches(text.trim())
     }
 }

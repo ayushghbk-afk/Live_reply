@@ -136,8 +136,9 @@ class LiveReplyAccessibilityService : AccessibilityService() {
 
         if (messages.isEmpty()) return@withContext
 
-        // Identify the latest incoming message
-        val latestIncoming = messages.lastOrNull { it.isIncoming } ?: return@withContext
+        // Identify the latest incoming message burst (captures all consecutive rapid-fire messages)
+        val burst = ChatReaderEngine.extractLatestIncomingBurst(messages) ?: return@withContext
+        val latestIncoming = burst.individualMessages.last()
 
         // Loop and duplicate prevention check
         if (!loopPrevention.shouldProcessMessage(latestIncoming)) {
@@ -146,14 +147,17 @@ class LiveReplyAccessibilityService : AccessibilityService() {
 
         // We have a confirmed new incoming message!
         loopPrevention.markMessageProcessed(latestIncoming.text)
-        LiveSessionState.setNewIncomingMessage(latestIncoming.text, messages)
-        repository.log("Detector", "New incoming message in $chatTitle: \"${latestIncoming.text.take(60)}\"", "INFO")
+        val textToReplyTo = burst.combinedText
+        val displaySender = burst.primarySender ?: chatTitle
+
+        LiveSessionState.setNewIncomingMessage(textToReplyTo, messages)
+        repository.log("Detector", "New incoming message from $displaySender in $chatTitle: \"${textToReplyTo.replace("\n", " // ").take(60)}\"", "INFO")
 
         // Auto-update conversation memory with new message context
-        autoLearnConversationMemory(packageName, chatTitle, latestIncoming.text)
+        autoLearnConversationMemory(packageName, chatTitle, textToReplyTo)
 
-        // Trigger AI Reply Generation
-        processIncomingMessage(latestIncoming.text, messages, packageName)
+        // Trigger AI Reply Generation with the full burst context
+        processIncomingMessage(textToReplyTo, messages, packageName)
     }
 
     /**

@@ -58,7 +58,7 @@ class OpenAiCompatibleProvider(
             repository.getMemory("$pkg:$title")
         } else null
 
-        val systemPrompt = buildSystemPrompt(persona, config, memory)
+        val systemPrompt = buildSystemPrompt(persona, config, memory, contextMessages, incomingMessage)
 
         var lastError: Throwable? = null
 
@@ -216,7 +216,9 @@ class OpenAiCompatibleProvider(
     private fun buildSystemPrompt(
         persona: PersonaEntity,
         config: AppConfig,
-        memory: com.example.storage.ConversationMemoryEntity? = null
+        memory: com.example.storage.ConversationMemoryEntity? = null,
+        contextMessages: List<ChatMessage> = emptyList(),
+        incomingMessage: String = ""
     ): String {
         val customGlobal = secureStorage.customSystemPrompt.trim()
         val languageInstruction = if (config.translationModeEnabled && config.targetLanguage != "Auto") {
@@ -226,6 +228,11 @@ class OpenAiCompatibleProvider(
         } else {
             "Reply strictly in ${config.targetLanguage}."
         }
+
+        val currentTitle = com.example.core.state.LiveSessionState.currentChatTitle.value ?: "Chat"
+        val currentPkg = com.example.core.state.LiveSessionState.currentPackageName.value ?: ""
+        val isGroup = com.example.accessibility.ChatReaderEngine.isGroupChat(contextMessages, currentTitle)
+        val burst = com.example.accessibility.ChatReaderEngine.extractLatestIncomingBurst(contextMessages)
 
         return buildString {
             append("You are a real-time conversation reply assistant acting as the user in a live chat. ")
@@ -238,6 +245,29 @@ class OpenAiCompatibleProvider(
             append("- Maintain a natural texting rhythm and human tone.\n")
             append("- $languageInstruction\n")
             append("- Reply length guideline: ${persona.replyLength.instruction} (Maximum ${persona.maxCharacters} characters).\n\n")
+
+            append("CHAT SITUATIONAL AWARENESS:\n")
+            append("- Active Screen / App: ${if (currentPkg.isNotBlank()) currentPkg else "Mobile Messenger"}\n")
+            append("- Chat Conversation: \"$currentTitle\"\n")
+            if (isGroup) {
+                append("- Chat Type: MULTI-USER GROUP CHAT. Other members' names are prefixed like '[Alice]: ...'. You are replying as yourself ('You'). Address the specific person who spoke or the group naturally.\n")
+            } else {
+                append("- Chat Type: DIRECT 1-ON-1 CONVERSATION with $currentTitle.\n")
+            }
+
+            if (burst != null) {
+                if (!burst.primarySender.isNullOrBlank()) {
+                    append("- Message Sender: ${burst.primarySender}\n")
+                }
+                if (!burst.quotedMessageText.isNullOrBlank()) {
+                    val qWhom = burst.quotedSender ?: "an earlier message"
+                    append("- QUOTED CONTEXT: The incoming message is explicitly replying to $qWhom: \"${burst.quotedMessageText}\". Answer this directly!\n")
+                }
+                if (burst.hasVoiceNote) {
+                    append("- The other person sent a Voice Note. Respond conversationally to their voice update.\n")
+                }
+            }
+            append("\n")
 
             append("PERSONA DETAILS:\n")
             append("Category: ${persona.category.displayName}\n")
@@ -292,12 +322,26 @@ class OpenAiCompatibleProvider(
         // 2. Conversation context (trimmed to user's config limit)
         val limit = config.contextMessageCount.coerceIn(5, 50)
         val recentHistory = contextMessages.takeLast(limit)
+        val currentTitle = com.example.core.state.LiveSessionState.currentChatTitle.value ?: "Contact"
+        val isGroup = com.example.accessibility.ChatReaderEngine.isGroupChat(recentHistory, currentTitle)
 
         for (msg in recentHistory) {
             val role = if (msg.isIncoming) "user" else "assistant"
+            val content = if (!msg.isIncoming) {
+                msg.text
+            } else {
+                if (isGroup && !msg.senderName.isNullOrBlank()) {
+                    "[${msg.senderName}]: ${msg.text}"
+                } else if (!msg.replyToText.isNullOrBlank()) {
+                    "(Replying to: \"${msg.replyToText.take(40)}\") ${msg.text}"
+                } else {
+                    msg.text
+                }
+            }
+
             messages.put(JSONObject().apply {
                 put("role", role)
-                put("content", msg.text)
+                put("content", content)
             })
         }
 

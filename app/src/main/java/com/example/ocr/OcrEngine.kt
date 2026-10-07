@@ -2,6 +2,7 @@ package com.example.ocr
 
 import android.graphics.Bitmap
 import android.graphics.Rect
+import com.example.accessibility.ChatReaderEngine
 import com.example.core.model.ChatMessage
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -10,32 +11,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
+/**
+ * Advanced On-Screen OCR Chat Reading Engine powered by ML Kit.
+ *
+ * Implements:
+ * - Smart screen boundary pruning (status bar, bottom input chrome)
+ * - Deep multilingual noise suppression & floating overlay window exclusion
+ * - Header sender extraction for group chats
+ * - Bubble clustering with spatial alignment (left vs right)
+ */
 class OcrEngine {
 
     private val recognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
-
-    private val ignoredSystemPhrases = listOf(
-        "type a message",
-        "message...",
-        "ask chatgpt",
-        "message chatgpt",
-        "send a message",
-        "start a conversation",
-        "online",
-        "typing...",
-        "last seen",
-        "today",
-        "yesterday",
-        "swipe to reply",
-        "delivered",
-        "read",
-        "search"
-    )
-
-    private val timestampRegex = Regex("^\\d{1,2}:\\d{2}(\\s?[AaPp][Mm])?$")
-    private val dateOnlyRegex = Regex("^(today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$", RegexOption.IGNORE_CASE)
 
     suspend fun recognizeConversation(
         bitmap: Bitmap,
@@ -73,17 +62,20 @@ class OcrEngine {
                 if (box.top < topMargin || box.bottom > bottomMargin) continue
 
                 // Exclude system noise, lone timestamps, and UI placeholders
-                if (isSystemNoise(text)) continue
+                if (ChatReaderEngine.isSystemNoise(text)) continue
 
                 // Determine bubble alignment
-                // Left aligned (incoming): box.left < 38% width
-                // Right aligned (outgoing): box.right > 65% width and box.left > 25% width
+                // Right aligned (outgoing): box.right > 65% width and box.left > 22% width
                 val isRightAligned = (box.right > imageWidth * 0.65f) && (box.left > imageWidth * 0.22f)
                 val isIncoming = !isRightAligned
 
+                // Check for sender name prefix (e.g. "Alex: hello" or bold first line in block)
+                val (sender, messageText) = extractSenderFromOcrText(text, isIncoming)
+
                 rawBlocks.add(
                     RawTextBlock(
-                        text = text,
+                        text = messageText,
+                        senderName = sender,
                         box = box,
                         isIncoming = isIncoming
                     )
@@ -113,20 +105,24 @@ class OcrEngine {
     private fun cleanOcrText(raw: String): String {
         return raw.lines()
             .map { it.trim() }
-            .filter { line -> line.isNotEmpty() && !isSystemNoise(line) }
+            .filter { line -> line.isNotEmpty() && !ChatReaderEngine.isSystemNoise(line) }
             .joinToString(" ")
             .trim()
     }
 
-    private fun isSystemNoise(text: String): Boolean {
-        val lower = text.lowercase().trim()
-        if (lower.length < 2) return true
-        if (timestampRegex.matches(lower)) return true
-        if (dateOnlyRegex.matches(lower)) return true
-        if (ignoredSystemPhrases.any { lower == it || lower.startsWith(it) }) return true
-        // Filter out battery / network status like "100%", "LTE", "5G"
-        if (lower.matches(Regex("^\\d{1,3}%$")) || lower in listOf("lte", "5g", "4g", "wi-fi", "wifi")) return true
-        return false
+    private fun extractSenderFromOcrText(text: String, isIncoming: Boolean): Pair<String?, String> {
+        if (!isIncoming) return Pair(null, text)
+
+        val colonIndex = text.indexOf(':')
+        if (colonIndex in 2..25) {
+            val potentialSender = text.substring(0, colonIndex).trim()
+            val remainder = text.substring(colonIndex + 1).trim()
+            // Make sure the sender doesn't contain digits or time indicators
+            if (potentialSender.all { it.isLetter() || it.isWhitespace() } && remainder.isNotBlank()) {
+                return Pair(potentialSender, remainder)
+            }
+        }
+        return Pair(null, text)
     }
 
     /**
@@ -170,6 +166,7 @@ class OcrEngine {
 
     private fun buildMessageFromCluster(cluster: List<RawTextBlock>): ChatMessage {
         val combinedText = cluster.joinToString(" ") { it.text }.trim()
+        val sender = cluster.firstOrNull { !it.senderName.isNullOrBlank() }?.senderName
         val firstBox = cluster.first().box
         val lastBox = cluster.last().box
         val isIncoming = cluster.first().isIncoming
@@ -181,6 +178,7 @@ class OcrEngine {
             id = "ocr_${firstBox.left}_${firstBox.top}_${combinedText.hashCode()}",
             text = combinedText,
             isIncoming = isIncoming,
+            senderName = sender,
             timestamp = System.currentTimeMillis(),
             confidence = 0.92f,
             boundsLeft = minLeft,
@@ -192,6 +190,7 @@ class OcrEngine {
 
     private data class RawTextBlock(
         val text: String,
+        val senderName: String? = null,
         val box: Rect,
         val isIncoming: Boolean
     )
